@@ -1,9 +1,13 @@
 #pragma once
-
 // std
 #include <string>
 // socket api
 #include <sys/socket.h>
+// boost
+#include <boost/program_options.hpp>
+
+
+namespace po = boost::program_options;
 
 class tcp_client
 {
@@ -21,7 +25,9 @@ public:
     bool set_addr(std::string host, int port);
     bool create_connection();
     int send_to_socket(const std::string& data);
-    int read_from_socket();
+    int send_to_socket(char data[], int size);
+    std::string read_from_socket();
     void close_socket();
     static std::string error_to_string(int error_code);
+    static po::variables_map read_program_options(int argc, char* argv[]);
 };

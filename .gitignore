@@ -1,3 +1,7 @@
 build/
 *.log
 .vscode/
+.directory
+prepare_data.py
+*output
+outbut

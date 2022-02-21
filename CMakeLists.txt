@@ -1,3 +1,5 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(network_programming)
+find_package(Boost COMPONENTS program_options filesystem system REQUIRED)
+include_directories(${Boost_INCLUDE_DIR})
 add_subdirectory(src)
