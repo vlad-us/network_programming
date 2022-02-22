@@ -12,11 +12,7 @@
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
 
-#define MAX_READ_BUF 128  /* максимальный размер буфера при чтении 4 КБ */
-
 namespace fs = boost::filesystem;
-
-std::stringstream prepare_command(int note_num);
 
 tcp_client::tcp_client()
 {}
@@ -56,32 +52,33 @@ bool tcp_client::create_connection()
 int tcp_client::send_to_socket(const std::string& data)
 {
     const char* _data = data.c_str();
-    // std::cout << "data to send: " << data.length() << '\n';
-    int bytes_sent = write(m_socket, _data, data.length());
-    // std::cout << "bytes_sent: " << bytes_sent << '\n';
-    return bytes_sent;
-}
-
-int tcp_client::send_to_socket(char data[], int size)
-{
-    int bytes_sent = write(m_socket, data, size);
-    std::cout << "bytes_to_send: " << size << '\n';
+    ssize_t bytes_sent = write(m_socket, _data, data.length());
+    // ssize_t bytes_sent = send(m_socket, _data, data.length(), MSG_NOSIGNAL);
     std::cout << "bytes_sent: " << bytes_sent << '\n';
+    if( bytes_sent < 0 )
+    {
+        std::cout << "error: " << this->error_to_string(errno) << '\n';
+    }
     return bytes_sent;
 }
 
-std::string tcp_client::read_from_socket()
+plu_header tcp_client::get_plu_header(int32_t file_number)
 {
-    std::stringstream response;
-    char buf[MAX_READ_BUF + 1];
-    int bytes_read = 0;
-    while( (bytes_read = read(m_socket, buf, MAX_READ_BUF)) > 0 )
-    {
-        buf[bytes_read] = 0;
-        response << buf;
-        std::cout << "BUF: " << buf << std::endl;
-    }
-    return response.str();
+    plu_header header;
+    int bytes_received = read(m_socket, &header, sizeof(header));
+    header.plu_record_size = ntohs(header.plu_record_size);
+    header.plu_number = fromBcd(ntohl(header.plu_number));
+    std::cout << "get_plu_header::bytes_received: " << bytes_received << '\n';
+    return header;
+}
+
+std::string tcp_client::read_from_socket(int bufer_size)
+{
+    char buf[bufer_size];
+    size_t bytes_received = read(m_socket, buf, sizeof(buf));
+    std::cout << "read_from_socket::bytes_received: " << bytes_received << '\n';
+    std::string response{ buf, bytes_received };
+    return response;
 }
 
 void tcp_client::close_socket()
@@ -125,37 +122,55 @@ bool run(int argc, char* argv[])
         std::cerr << "Error: " << tcp_client::error_to_string(errno) << '\n';
         return false;
     }
-    char data_to_send[6];
-    // std::ifstream file{ "/home/us_va/cpp_learn/network_programming/outbut", std::ios_base::binary };
-    // file.read(data_to_send, sizeof(data_to_send));
-    std::stringstream ss = prepare_command(0x00000000);
-    ss.read(data_to_send, sizeof(data_to_send));
-    client.send_to_socket(data_to_send, sizeof(data_to_send));
-    // int bytes_to_send = sizeof(*(data_to_send.c_str())) * data_to_send.length();
-    // int bytes_sent = client.send_to_socket(data_to_send);
-    // if( bytes_to_send != bytes_sent )
-    // {
-    //     std::cerr << "Error: ошибка при отправке данных\n";
-    //     return false;
-    // }
-    // std::stringstream ss;
-    std::string response = client.read_from_socket();
-    // ss << response;
-    std::cout << "response: " << response.c_str() << '\n';
-    std::cout << "response size: " << sizeof(*(response.c_str())) * response.length() << '\n';
+
+    std::stringstream command = prepare_command(query_type::read, file_types::plu, 0);
+    client.send_to_socket(command.str());
+    plu_header plu_header = client.get_plu_header();
+    std::string plu_record = client.read_from_socket(plu_header.plu_record_size + 1);
+    std::cout << "PLU_HEADER\n";
+    std::cout << "plu_header.plu_number: " << plu_header.plu_number << '\n';
+    std::cout << "plu_header.plu_record_size: " << plu_header.plu_record_size << '\n';
+    std::cout << "PLU_RECORD\n";
+    std::cout << "plu_record.length(): " << plu_record.length() << '\n';
     std::ofstream o_file{ "digi_output", std::ios_base::binary };
-    o_file.write(response.c_str(), sizeof(*(response.c_str())) * response.length());
+    o_file << plu_header.plu_number << plu_header.plu_record_size << plu_record;
+    o_file << "\n\n";
+    std::cout << "===\n";
+    command = prepare_command(query_type::read, file_types::plu, htonl(toBcd(plu_header.plu_number)));  // htonl(toBcd(plu_header.plu_number))
+    client.send_to_socket(command.str());
+    plu_header = client.get_plu_header();
+    plu_record = client.read_from_socket(plu_header.plu_record_size + 1);
+    std::cout << "PLU_HEADER\n";
+    std::cout << "plu_header.plu_number: " << plu_header.plu_number << '\n';
+    std::cout << "plu_header.plu_record_size: " << plu_header.plu_record_size << '\n';
+    std::cout << "PLU_RECORD\n";
+    std::cout << "plu_record.length(): " << plu_record.length() << '\n';
+    o_file << plu_header.plu_number << plu_header.plu_record_size << plu_record;
+    o_file << "\n\n";
+    std::cout << "===\n";
+    command = prepare_command(query_type::read, file_types::plu, htonl(toBcd(plu_header.plu_number)));  // htonl(toBcd(plu_header.plu_number))
+    client.send_to_socket(command.str());
+    plu_header = client.get_plu_header();
+    plu_record = client.read_from_socket(plu_header.plu_record_size + 1);
+    std::cout << "PLU_HEADER\n";
+    std::cout << "plu_header.plu_number: " << plu_header.plu_number << '\n';
+    std::cout << "plu_header.plu_record_size: " << plu_header.plu_record_size << '\n';
+    std::cout << "PLU_RECORD\n";
+    std::cout << "plu_record.length(): " << plu_record.length() << '\n';
+    o_file << plu_header.plu_number << plu_header.plu_record_size << plu_record;
+    o_file << "\n\n";
+
+    // o_file << plu_header.plu_number << plu_header.plu_record_size << plu_record;
+    // o_file.write(plu_record.c_str(), sizeof(*(plu_record.c_str())) * plu_record.length());
     o_file.close();
     return true;
 }
 
-std::stringstream prepare_command(int note_num)
+std::stringstream prepare_command(query_type action, file_types file_type, int note_num)
 {
     std::stringstream ss;
-    char command_code = 0xF7;
-    char file_num = 0x25;
-    ss.write(reinterpret_cast<char*>(&command_code), sizeof(command_code));
-    ss.write(reinterpret_cast<char*>(&file_num), sizeof(file_num));
+    ss.write(reinterpret_cast<char*>(&action), sizeof(action));
+    ss.write(reinterpret_cast<char*>(&file_type), sizeof(file_type));
     ss.write(reinterpret_cast<char*>(&note_num), sizeof(note_num));
     return ss;
 }
@@ -163,8 +178,6 @@ std::stringstream prepare_command(int note_num)
 
 int main(int argc, char* argv[])
 {
-    // std::ofstream file{ "/home/us_va/cpp_learn/network_programming/file_26H", std::ios_base::binary };
-
     bool success = false;
     success = run(argc, argv);
     return success ? 0 : 1;

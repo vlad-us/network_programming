@@ -5,3 +5,5 @@ build/
 prepare_data.py
 *output
 outbut
+README.md
+tcp_dump.pcap
